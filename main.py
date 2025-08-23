@@ -1,20 +1,9 @@
-from ast import List
-from urllib import response
 from h11 import Request
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.action_chains import ActionChains
-import time
 from fastapi.templating import Jinja2Templates
 import uvicorn
 from pydantic import BaseModel
-import re
-from typing import Optional
 import requests
 import aiohttp
 import asyncio
@@ -187,7 +176,8 @@ async def parse_data():
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        port=os.getenv("PORT") or 8000,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT") or 8000),
         reload=False
     )
     
