@@ -187,7 +187,7 @@ async def parse_data():
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        port=8000,
+        port=os.getenv("PORT") or 8000,
         reload=False
     )
     
