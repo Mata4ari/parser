@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skin Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .refresh-btn {
+            padding: 12px 24px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover {
+            background: #45a049;
+        }
+        .refresh-btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .loading {
+            background: #fffde7;
+            color: #333;
+            border: 1px solid #ffeb3b;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #f44336;
+        }
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #4caf50;
+        }
+        .items-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+            gap: 1px;
+            background-color: #e0e0e0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .grid-header {
+            background: #2c3e50;
+            color: white;
+            font-weight: bold;
+            padding: 15px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .grid-header:hover {
+            background: #34495e;
+        }
+        .item-cell {
+            padding: 12px;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .item-row:nth-child(even) .item-cell {
+            background: #fafafa;
+        }
+        .item-row:hover .item-cell {
+            background: #f0f8ff;
+        }
+        .name-cell {
+            justify-content: flex-start;
+            text-align: left;
+            font-weight: 500;
+        }
+        .price {
+            font-weight: bold;
+            color: #2e7d32;
+        }
+        .profit-positive {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .profit-negative {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .profit-neutral {
+            color: #7f8c8d;
+        }
+        .count {
+            color: #2980b9;
+            font-weight: 500;
+        }
+        .sort-arrow {
+            margin-left: 5px;
+            font-size: 12px;
+        }
+        .stats {
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+        .stat-item {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        .profit-cell-negative {
+        background-color: #ffebee !important; /* Красный фон для всей ячейки */
+        color: #c62828 !important;
+        font-weight: bold;
+    }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Skin Profit Analyzer</h1>
+        <p>Анализ прибыльности скинов между Loot.farm и DMarket</p>
+    </div>
+
+    <div style="text-align: center;">
+        <button class="refresh-btn" id="refresh-btn">🔄 Обновить данные</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div id="stats-container" class="stats" style="display: none;">
+        <h3>📈 Статистика</h3>
+        <div class="stats-grid" id="stats-grid"></div>
+    </div>
+
+    <div id="data-container">
+        <p style="text-align: center; color: #7f8c8d;">Данные не загружены. Нажмите кнопку "Обновить данные"</p>
+    </div>
+
+    <script>
+        let currentData = [];
+        let sortField = 'profit_to_lf';
+        let sortDirection = 'desc';
+
+        document.getElementById('refresh-btn').addEventListener('click', async function() {
+            const btn = this;
+            const statusEl = document.getElementById('status');
+            const statsContainer = document.getElementById('stats-container');
+            
+            btn.disabled = true;
+            statusEl.className = 'status loading';
+            statusEl.innerHTML = '<p>⏳ Загрузка и анализ данных... Это может занять несколько минут</p>';
+            
+            try {
+                const response = await fetch('/parse', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Ошибка сервера: ' + response.status);
+                }
+                
+                const items = await response.json();
+                currentData = items;
+                
+                sortData();
+                updateStats();
+                
+                statsContainer.style.display = 'block';
+                statusEl.className = 'status success';
+                statusEl.innerHTML = `<p>✅ Данные успешно обновлены! Проанализировано ${items.length} предметов</p>`;
+                
+            } catch (error) {
+                statusEl.className = 'status error';
+                statusEl.innerHTML = `<p>❌ Ошибка: ${error.message}</p>`;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        function updateStats() {
+            const statsGrid = document.getElementById('stats-grid');
+            const profitableToLF = currentData.filter(item => item.profit_to_lf > 0).length;
+            const profitableToDM = currentData.filter(item => item.profit_to_dm > 0).length;
+            const avgProfitLF = currentData.reduce((sum, item) => sum + item.profit_to_lf, 0) / currentData.length;
+            const avgProfitDM = currentData.reduce((sum, item) => sum + item.profit_to_dm, 0) / currentData.length;
+
+            statsGrid.innerHTML = `
+                <div class="stat-item">
+                    <div class="stat-value">${currentData.length}</div>
+                    <div class="stat-label">Всего предметов</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${profitableToLF}</div>
+                    <div class="stat-label">Выгодно на Loot.farm</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${profitableToDM}</div>
+                    <div class="stat-label">Выгодно на DMarket</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${avgProfitLF.toFixed(1)}%</div>
+                    <div class="stat-label">Средняя прибыль LF</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${avgProfitDM.toFixed(1)}%</div>
+                    <div class="stat-label">Средняя прибыль DM</div>
+                </div>
+            `;
+        }
+
+        function sortData() {
+            currentData.sort((a, b) => {
+                let valueA = a[sortField];
+                let valueB = b[sortField];
+                
+                // Обработка undefined/null значений
+                if (valueA == null) valueA = sortDirection === 'asc' ? Infinity : -Infinity;
+                if (valueB == null) valueB = sortDirection === 'asc' ? Infinity : -Infinity;
+                
+                if (valueA < valueB) return sortDirection === 'asc' ? -1 : 1;
+                if (valueA > valueB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            renderData();
+        }
+
+        function changeSort(field) {
+            if (sortField === field) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortField = field;
+                sortDirection = 'desc';
+            }
+            sortData();
+        }
+
+        function getProfitClass(profit,num,overstock_lf) {
+            if (num >= overstock_lf) {
+            return 'profit-cell-negative'; // Красный фон для всей ячейки
+        }
+            if (profit > 5) return 'profit-positive';
+            if (profit > 0) return 'profit-neutral';
+            return 'profit-negative';
+        }
+
+        function renderData() {
+            const container = document.getElementById('data-container');
+            
+            if (currentData.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #7f8c8d;">Ничего не найдено</p>';
+                return;
+            }
+            
+            container.innerHTML = `
+                <div class="items-grid">
+                    <!-- Заголовки -->
+                    <div class="grid-header" onclick="changeSort('name')">
+                        Название предмета ${sortField === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                    </div>
+                    <div class="grid-header" onclick="changeSort('price_lf')">
+                        Цена LF $ ${sortField === 'price_lf' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                    </div>
+                    <div class="grid-header" onclick="changeSort('price_dm')">
+                        Цена DM $ ${sortField === 'price_dm' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                    </div>
+                    <div class="grid-header" onclick="changeSort('max_order')">
+                        Макс ордер $ ${sortField === 'max_order' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                    </div>
+                    <div class="grid-header" onclick="changeSort('profit_to_lf')">
+                        Прибыль LF % ${sortField === 'profit_to_lf' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                    </div>
+                    <div class="grid-header" onclick="changeSort('profit_to_dm')">
+                        Прибыль DM % ${sortField === 'profit_to_dm' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                    </div>
+                    <div class="grid-header" onclick="changeSort('num')">
+                        Наличие ${sortField === 'num' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                    </div>
+                    <div class="grid-header" onclick="changeSort('overstock_lf')">
+                        Оверсток ${sortField === 'overstock_lf' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                    </div>
+                    
+                    <!-- Данные -->
+                    ${currentData.map(item => `
+                        <div class="item-cell name-cell">${item.name}</div>
+                        <div class="item-cell price">$${item.price_lf.toFixed(2)}</div>
+                        <div class="item-cell price">$${item.price_dm.toFixed(2)}</div>
+                        <div class="item-cell price">$${item.max_order.toFixed(2)}</div>
+                        <div class="item-cell ${getProfitClass(item.profit_to_lf,item.num,item.overstock_lf)}">
+                            ${item.profit_to_lf.toFixed(1)}%
+                        </div>
+                        <div class="item-cell ${getProfitClass(item.profit_to_dm,item.num,item.overstock_lf)}">
+                            ${item.profit_to_dm.toFixed(1)}%
+                        </div>
+                        <div class="item-cell count">${item.num}</div>
+                        <div class="item-cell count">${item.overstock_lf}</div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            renderData();
+        });
+    </script>
+</body>
+</html>
