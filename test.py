@@ -50,13 +50,10 @@ load_dotenv()
 
 public_key = os.getenv("DMARKET_PUBLIC_KEY")
 secret_key = os.getenv("DMARKET_SECRET_KEY")
+rusttm_key = os.getenv("RUSTTM_API_KEY")
 
 
 
-app = FastAPI()
-
-templates = Jinja2Templates(directory="templates")
-dmarket_limiter = aiolimiter.AsyncLimiter(19, 1)
 
 
 def get_lootfarm():
@@ -73,84 +70,6 @@ def get_lootfarm():
         return []
 
 
-async def make_signed_request(method, path, body=None):
-    async with dmarket_limiter:
-        nonce = str(round(datetime.now().timestamp()))
-        body_str = json.dumps(body) if body else json.dumps({})
-        string_to_sign = method + path + nonce
-        #print(string_to_sign)
-        
-        encoded = string_to_sign.encode('utf-8')
-        secret_bytes = bytes.fromhex(secret_key)
-        signature_bytes = crypto_sign(encoded, secret_bytes)
-        signature = signature_bytes[:64].hex()
-        
-        headers = {
-            "X-Api-Key": public_key,
-            "X-Request-Sign": "dmar ed25519 " + signature,
-            "X-Sign-Date": nonce,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        
-        url = "https://api.dmarket.com" + path
-        # logger.info(f"запрос")
-        try:
-            async with aiohttp.ClientSession() as session:
-                if method == "GET":
-                    async with session.get(url, headers=headers, timeout=20) as response:
-                        return await response.json()
-                else:
-                    async with session.get(url, headers=headers, timeout=20) as response:
-                        return await response.json()
-        except Exception as e:
-            print(f"Request error: {e}")
-            return None
-    
-
-async def get_dmarket_item_data(item: SkinItem):
-    search_path1 = f"/exchange/v1/offers-by-title?title={item.name}&limit=50"
-    search_path2 = f"/marketplace-api/v1/targets-by-title/rust/{item.name}"
-
-    
-    response1 = await make_signed_request("GET", search_path1)
-    response2 = await make_signed_request("GET", search_path2)
-
-    try:
-        if response1 and 'objects' in response1:
-            arr = response1['objects']
-            # logger.info(f"ответ")
-            if arr:
-                offers = [a for a in arr if a['title'] == item.name]
-                if offers:
-                    offer = min(offers, key=lambda x: float(x['price']['USD']))
-                    item.price_dm = float(offer['price']['USD']) / 100
-    except Exception as e:
-        print(f"Error processing response1 for {item.name}: {e}")
-    
-    try:
-        if response2 and 'orders' in response2:
-            arr = response2['orders']
-            if arr:
-                item.max_order = float(arr[0]['price']) / 100
-    except Exception as e:
-        print(f"Error processing response2 for {item.name}: {e}")
-    
-    return item
-
-async def get_dmarket(items: list[SkinItem]):
-    tasks = [get_dmarket_item_data(item) for item in items]
-    results = await asyncio.gather(*tasks, return_exceptions=False)
-    
-    successful_results = []
-    for result in results:
-        if not isinstance(result, Exception):
-            successful_results.append(result)
-        else:
-            print(f"Error in task: {result}")
-    
-    return successful_results  
-
 def get_profits(items:list[SkinItem]):
     for i in items:
         i.profit_to_lf=i.price_lf*100/i.price_dm-108
@@ -158,32 +77,30 @@ def get_profits(items:list[SkinItem]):
     return items
 
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "data": []
-    })
-
-
-@app.post("/parse")
-async def parse_data():
+def get_rusttm_prices(items:list[SkinItem]):
     try:
-        logger.info(f"старт")
-        data = get_lootfarm()
-        print(len(data))
-        data = await get_dmarket(data)
-        data = get_profits(data)
-        logger.info(f"конец")
+        parsed_data=[]
+        url = "https://rust.tm/api/v2/prices/class_instance/USD.json"
+        headers ={'X-API-KEY':rusttm_key}
+
+        response = requests.get(url=url,headers=headers)
+        rusttm_items = response.json()['items']
+        for i in items:
+            item = [a for a in rusttm_items.values() if a['market_hash_name']==i.name]
+            if item:
+                item = item[0]
+            else:
+                continue
+            i.price_dm = float(item['price'])
+            i.max_order = float(item['buy_order'])
+        return items
+
     except Exception as e:
-        print('err')
+        print(f"Ошибка при парсинге rusttm: {e}")
+        return []
 
-    return data
 
-if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        port=8000,
-        reload=False
-    )
-    
+data = get_lootfarm()
+data = get_rusttm_prices(data)
+data = get_profits(data)
+print(data)

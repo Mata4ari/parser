@@ -31,7 +31,7 @@ class SkinItem(BaseModel):
     price_lf: float=0.00001
     price_dm: float=0.00001
     num: int = 1
-    max_order:float=1000
+    max_order:float=0.00001
     lf_to_steam: float = 0
     profit_to_dm: float = -100
     profit_to_lf: float = -100
@@ -42,7 +42,7 @@ load_dotenv()
 
 public_key = os.getenv("DMARKET_PUBLIC_KEY")
 secret_key = os.getenv("DMARKET_SECRET_KEY")
-
+rusttm_key = os.getenv("RUSTTM_API_KEY")
 
 
 
@@ -52,7 +52,7 @@ templates = Jinja2Templates(directory="templates")
 dmarket_limiter = aiolimiter.AsyncLimiter(10, 1)
 
 
-def get_lootfarm():
+def get_lootfarm(num=0):
     try:
         parsed_data=[]
         url = "https://loot.farm/fullpriceRUST.json"
@@ -60,7 +60,7 @@ def get_lootfarm():
         for i in response.json():
             item = SkinItem(name=i['name'],price_lf=i['price']/100,num=i['have'],overstock_lf=i['max'],lf_to_steam=i['rate']/100)
             parsed_data.append(item)
-        return [a for a in parsed_data if a.num>0 and a.price_lf>=2 and a.price_lf<=10 and a.overstock_lf>0]
+        return [a for a in parsed_data if a.num>num and a.price_lf>=2 and a.price_lf<=10 and a.overstock_lf>0]
     except Exception as e:
         print(f"Ошибка при парсинге lootfarm: {e}")
         return []
@@ -144,10 +144,34 @@ async def get_dmarket(items: list[SkinItem]):
     
     return successful_results  
 
+def get_rusttm_prices(items:list[SkinItem]):
+    try:
+        parsed_data=[]
+        url = "https://rust.tm/api/v2/prices/class_instance/USD.json"
+        headers ={'X-API-KEY':rusttm_key}
+
+        response = requests.get(url=url,headers=headers)
+        rusttm_items = response.json()['items']
+        for i in items:
+            item = [a for a in rusttm_items.values() if a['market_hash_name']==i.name]
+            if item:
+                item = item[0]
+            else:
+                continue
+            i.price_dm = float(item['price'])
+            i.max_order = float(item['buy_order'])
+        return items
+
+    except Exception as e:
+        print(f"Ошибка при парсинге rusttm: {e}")
+        return []
+
 def get_profits(items:list[SkinItem]):
+    items = [i for i in items if i.max_order>0.01 and i.price_dm>0.01]
     for i in items:
         i.profit_to_lf=i.price_lf*100/i.price_dm-108
         i.profit_to_dm=i.max_order*100/i.price_lf-105
+    
     return items
 
 
@@ -173,10 +197,23 @@ async def parse_data():
 
     return data
 
+@app.post("/parsetm")
+async def parse_data():
+    try:
+        logger.info(f"старт")
+        data = get_lootfarm(num=-1)
+        print(len(data))
+        data = get_rusttm_prices(data)
+        data = get_profits(data)
+        logger.info(f"конец")
+    except Exception as e:
+        print('err')
+
+    return data
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
         port=int(os.getenv("PORT") or 8000),
         reload=False
     )

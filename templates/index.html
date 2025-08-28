@@ -16,6 +16,13 @@
             text-align: center;
             margin-bottom: 20px;
         }
+        .buttons-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
         .refresh-btn {
             padding: 12px 24px;
             background: #4CAF50;
@@ -24,7 +31,7 @@
             cursor: pointer;
             font-size: 16px;
             border-radius: 6px;
-            margin-bottom: 20px;
+            min-width: 180px;
         }
         .refresh-btn:hover {
             background: #45a049;
@@ -32,6 +39,12 @@
         .refresh-btn:disabled {
             background: #cccccc;
             cursor: not-allowed;
+        }
+        .refresh-btn.secondary {
+            background: #2196F3;
+        }
+        .refresh-btn.secondary:hover {
+            background: #1976D2;
         }
         .status {
             margin: 10px 0;
@@ -148,10 +161,19 @@
             margin-top: 5px;
         }
         .profit-cell-negative {
-        background-color: #ffebee !important; /* Красный фон для всей ячейки */
-        color: #c62828 !important;
-        font-weight: bold;
-    }
+            background-color: #ffebee !important;
+            color: #c62828 !important;
+            font-weight: bold;
+        }
+        .source-indicator {
+            margin-top: 10px;
+            padding: 8px;
+            background: #e3f2fd;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 14px;
+            color: #1976D2;
+        }
     </style>
 </head>
 <body>
@@ -160,10 +182,12 @@
         <p>Анализ прибыльности скинов между Loot.farm и DMarket</p>
     </div>
 
-    <div style="text-align: center;">
-        <button class="refresh-btn" id="refresh-btn">🔄 Обновить данные</button>
+    <div class="buttons-container">
+        <button class="refresh-btn" id="refresh-btn-1">🔄 Данные с /parse</button>
+        <button class="refresh-btn secondary" id="refresh-btn-2">🔄 Данные с /parsetm</button>
     </div>
 
+    <div id="source-indicator" class="source-indicator" style="display: none;"></div>
     <div id="status" class="status"></div>
 
     <div id="stats-container" class="stats" style="display: none;">
@@ -172,25 +196,44 @@
     </div>
 
     <div id="data-container">
-        <p style="text-align: center; color: #7f8c8d;">Данные не загружены. Нажмите кнопку "Обновить данные"</p>
+        <p style="text-align: center; color: #7f8c8d;">Данные не загружены. Выберите источник данных</p>
     </div>
 
     <script>
         let currentData = [];
+        let currentSource = '';
         let sortField = 'profit_to_lf';
         let sortDirection = 'desc';
 
-        document.getElementById('refresh-btn').addEventListener('click', async function() {
-            const btn = this;
+        // Обработчики для обеих кнопок
+        document.getElementById('refresh-btn-1').addEventListener('click', function() {
+            fetchData('/parse', 'Основной источник');
+        });
+
+        document.getElementById('refresh-btn-2').addEventListener('click', function() {
+            fetchData('/parsetm', 'Альтернативный источник');
+        });
+
+        async function fetchData(endpoint, sourceName) {
+            const btn1 = document.getElementById('refresh-btn-1');
+            const btn2 = document.getElementById('refresh-btn-2');
             const statusEl = document.getElementById('status');
             const statsContainer = document.getElementById('stats-container');
+            const sourceIndicator = document.getElementById('source-indicator');
             
-            btn.disabled = true;
+            // Блокируем обе кнопки
+            btn1.disabled = true;
+            btn2.disabled = true;
+            
+            currentSource = sourceName;
+            sourceIndicator.style.display = 'block';
+            sourceIndicator.textContent = `📡 Источник данных: ${sourceName} (${endpoint})`;
+            
             statusEl.className = 'status loading';
             statusEl.innerHTML = '<p>⏳ Загрузка и анализ данных... Это может занять несколько минут</p>';
             
             try {
-                const response = await fetch('/parse', {
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -215,9 +258,11 @@
                 statusEl.className = 'status error';
                 statusEl.innerHTML = `<p>❌ Ошибка: ${error.message}</p>`;
             } finally {
-                btn.disabled = false;
+                // Разблокируем обе кнопки
+                btn1.disabled = false;
+                btn2.disabled = false;
             }
-        });
+        }
 
         function updateStats() {
             const statsGrid = document.getElementById('stats-grid');
@@ -247,6 +292,10 @@
                     <div class="stat-value">${avgProfitDM.toFixed(1)}%</div>
                     <div class="stat-label">Средняя прибыль DM</div>
                 </div>
+                <div class="stat-item">
+                    <div class="stat-value">${currentSource}</div>
+                    <div class="stat-label">Источник данных</div>
+                </div>
             `;
         }
 
@@ -255,7 +304,6 @@
                 let valueA = a[sortField];
                 let valueB = b[sortField];
                 
-                // Обработка undefined/null значений
                 if (valueA == null) valueA = sortDirection === 'asc' ? Infinity : -Infinity;
                 if (valueB == null) valueB = sortDirection === 'asc' ? Infinity : -Infinity;
                 
@@ -277,10 +325,10 @@
             sortData();
         }
 
-        function getProfitClass(profit,num,overstock_lf) {
+        function getProfitClass(profit, num, overstock_lf) {
             if (num >= overstock_lf) {
-            return 'profit-cell-negative'; // Красный фон для всей ячейки
-        }
+                return 'profit-cell-negative';
+            }
             if (profit > 5) return 'profit-positive';
             if (profit > 0) return 'profit-neutral';
             return 'profit-negative';
@@ -328,10 +376,10 @@
                         <div class="item-cell price">$${item.price_lf.toFixed(2)}</div>
                         <div class="item-cell price">$${item.price_dm.toFixed(2)}</div>
                         <div class="item-cell price">$${item.max_order.toFixed(2)}</div>
-                        <div class="item-cell ${getProfitClass(item.profit_to_lf,item.num,item.overstock_lf)}">
+                        <div class="item-cell ${getProfitClass(item.profit_to_lf, item.num, item.overstock_lf)}">
                             ${item.profit_to_lf.toFixed(1)}%
                         </div>
-                        <div class="item-cell ${getProfitClass(item.profit_to_dm,item.num,item.overstock_lf)}">
+                        <div class="item-cell ${getProfitClass(item.profit_to_dm, item.num, item.overstock_lf)}">
                             ${item.profit_to_dm.toFixed(1)}%
                         </div>
                         <div class="item-cell count">${item.num}</div>
